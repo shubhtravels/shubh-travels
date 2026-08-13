@@ -1,19 +1,14 @@
 {
-  "name": "Shubh Tour & Travels",
-  "short_name": "Shubh Travels",
-  "description": "Shubh Tour & Travels Fleet, Booking, Billing and Accounts Manager",
-  "start_url": "./index.html",
-  "scope": "./",
-  "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#f5f7fb",
-  "theme_color": "#07152b",
-  "icons": [
-    {
-      "src": "./logo.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+  "name":"Shubh Tour & Travels",
+  "short_name":"Shubh Tour",
+  "start_url":"./index.html",
+  "scope":"./",
+  "display":"standalone",
+  "background_color":"#f4f6f9",
+  "theme_color":"#07152b",
+  "description":"Shubh Tour & Travels fleet, booking, vendor and billing manager",
+  "icons":[
+    {"src":"logo.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+    {"src":"logo.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
   ]
 }
