@@ -151,13 +151,31 @@ header{background:linear-gradient(145deg,#050b14,#10294b);color:#fff;padding:12p
  <button class="btn green" onclick="go('duty')">OPEN ACTIVE DUTY</button>
 </div>
 <div class="card">
- <h3>⭐ Loyalty & Permanent Driver</h3>
- <p class="muted">Customer ka loyalty stamp aur permanent driver package record yahan se check/share karo.</p>
+ <h3>⭐ Loyalty Card</h3>
+ <p class="muted">Completed booking ke baad customer ke loyalty stamps aur ₹100 reward status dekho/share karo.</p>
  <div class="grid2">
   <input id="loyaltyLookup" placeholder="Customer WhatsApp number" inputmode="numeric">
-  <button class="btn gold" onclick="lookupCustomerLoyalty()">🔎 CHECK CUSTOMER</button>
+  <button class="btn gold" onclick="lookupCustomerLoyalty()">🔎 CHECK LOYALTY</button>
  </div>
  <div id="loyaltyLookupResult" class="muted" style="margin-top:8px">Customer number dalo.</div>
+</div>
+<div class="card">
+ <h3>👨‍✈️ Permanent Driver</h3>
+ <p class="muted">Customer ke permanent driver package ko loyalty se alag manage/share karo.</p>
+ <div class="grid2">
+  <input id="driverPackageLookup" placeholder="Customer WhatsApp number" inputmode="numeric">
+  <button class="btn outline" onclick="lookupDriverPackageOnly()">🔎 CHECK DRIVER</button>
+ </div>
+ <div id="driverPackageLookupResult" class="muted" style="margin-top:8px">Customer number dalo.</div>
+</div>
+<div class="card">
+ <h3>🎁 Refer & Earn</h3>
+ <p class="muted">Customer ko referral link WhatsApp par bhejo. Referred customer ki first completed booking par referrer ko ₹100 bonus milega.</p>
+ <div class="grid2">
+  <input id="referralLookup" placeholder="Customer WhatsApp number" inputmode="numeric">
+  <button class="btn gold" onclick="lookupReferral()">🔎 REFERRAL</button>
+ </div>
+ <div id="referralResult" class="muted" style="margin-top:8px">Customer number dalo.</div>
 </div>
 <div class="card reminderCard">
  <div class="reminderHead"><div><h3>📅 Upcoming Bookings & Reminders</h3><p class="muted">Kal/आज ki duty, driver assignment aur confirmation status yahin dikhega.</p></div><span id="reminderCount" class="reminderBadge">0</span></div>
@@ -399,8 +417,11 @@ header{background:linear-gradient(145deg,#050b14,#10294b);color:#fff;padding:12p
 </div>
 
 <div id="history" class="page">
-<div class="card"><h2>Bill History</h2>
-<button class="btn danger mini" onclick="clearBillHistory()">Delete All Bill History</button><div id="historyList"></div><button class="btn outline" onclick="go('home')">← Back Home</button></div>
+<div class="card"><h2>🧾 Complete History & Turnover</h2>
+<div class="grid2"><input id="historyFrom" type="date" onchange="renderHistory()"><input id="historyTo" type="date" onchange="renderHistory()"></div>
+<div class="grid2" style="margin-top:8px"><input id="historySearch" placeholder="Customer / Bill / Booking search" oninput="renderHistory()"><button class="btn outline" onclick="clearHistoryFilters()">↻ ALL RECORDS</button></div>
+<div id="historySummary" class="muted" style="margin-top:10px"></div></div>
+<button class="btn danger mini" onclick="clearBillHistory()">Delete All Bill History</button><div id="historyList"></div><button class="btn outline" onclick="go('home')">← Back Home</button>
 </div>
 </section>
 </div>
@@ -502,6 +523,7 @@ function updateDriverMessagePreview(){
 
 function normalizePhone(v){return String(v||"").replace(/[^0-9+]/g,"")}
 function normalizeWhatsAppNumber(v){let p=String(v||"").replace(/\D/g,"");if(p.length===10)p="91"+p;else if(p.length===11&&p[0]==="0")p="91"+p.slice(1);return p}
+function phoneDisplay(v){let p=String(v||"").replace(/\D/g,"");if(!p)return "—";if(p.length===10)return "+91 "+p.slice(0,5)+" "+p.slice(5);if(p.length===11&&p[0]==="0")p=p.slice(1);if(p.length===12&&p.startsWith("91"))return "+91 "+p.slice(2,7)+" "+p.slice(7);return "+"+p}
 function contactLinks(phone){let p=cleanDial(phone),wa=normalizeWhatsAppNumber(phone);return {tel:"tel:"+p,sms:"sms:"+p,wa:"https://wa.me/"+wa}}
 function cleanDial(phone){return String(phone||"").replace(/[^0-9+]/g,"")}
 function callPerson(phone){let p=cleanDial(phone);if(!p){toast("Phone number missing.");return}window.location.href="tel:"+p}
@@ -685,6 +707,15 @@ function findLatestDriverPackage(phone){
  let list=load("shubhDriverAssignments","[]").filter(x=>String(x.customerPhone||"").replace(/\D/g,"")===String(phone||"").replace(/\D/g,""));
  return list.sort((a,b)=>new Date(b.updatedAt||b.createdAt)-new Date(a.updatedAt||a.createdAt))[0]||null;
 }
+function makeReferralCode(phone){let p=String(phone||"").replace(/\D/g,"");return "ST"+(p.slice(-6)||Date.now().toString().slice(-6));}
+function referralAccount(phone,name){let p=String(phone||"").replace(/\D/g,"");if(!p)return null;let list=load("shubhReferralAccounts","[]"),i=list.findIndex(x=>String(x.phone||"").replace(/\D/g,"")===p),a=i>=0?list[i]:{id:"RF-"+Date.now().toString(36).toUpperCase(),phone:p,name:name||"Customer",code:makeReferralCode(p),bonus:0,successfulReferrals:0,pendingReferrals:0,updatedAt:Date.now(),createdAt:Date.now()};if(name)a.name=name;if(!a.code)a.code=makeReferralCode(p);if(i<0)list.unshift(a);else list[i]=a;save("shubhReferralAccounts",list.slice(0,10000));return a;}
+function findReferralByCode(code){let c=String(code||"").trim().toUpperCase();if(!c)return null;return load("shubhReferralAccounts","[]").find(x=>String(x.code||"").toUpperCase()===c)||null;}
+function referralLink(a){return location.origin+location.pathname+"?ref="+encodeURIComponent(a.code);}
+function referralMessage(a){return `*SHUBH TOUR & TRAVELS & DRIVER SERVICES*\n\n🎁 *Refer & Earn ₹100*\n\nAapka referral code: *${a.code}*\n\nIs link ko apne friend/family ko WhatsApp par bhejiye:\n${referralLink(a)}\n\nAapke referral se naye customer ki *first completed booking* hone par aapko *₹100 bonus* milega.\n\n📞 6265584095 / 9893772425`;}
+function shareReferral(phone){let a=referralAccount(phone);if(!a)return;location.href="https://wa.me/?text="+encodeURIComponent(referralMessage(a));}
+function processReferralForCompletedRide(source){let code=source?.referralCode||source?.refCode||"";if(!code)return null;let ref=findReferralByCode(code);if(!ref)return null;let p=String(source.phone||"").replace(/\D/g,"");if(!p||p===String(ref.phone||"").replace(/\D/g,""))return null;let tx=load("shubhReferralTransactions","[]");let key=(source.bookingId||source.id||"")+"|"+ref.code;if(tx.some(x=>x.key===key))return ref;if(tx.some(x=>String(x.referredPhone||"").replace(/\D/g,"")===p))return ref;ref.bonus=Number(ref.bonus||0)+100;ref.successfulReferrals=Number(ref.successfulReferrals||0)+1;ref.updatedAt=Date.now();let list=load("shubhReferralAccounts","[]"),i=list.findIndex(x=>x.id===ref.id);if(i>=0)list[i]=ref;save("shubhReferralAccounts",list.slice(0,10000));tx.unshift({id:"RT-"+Date.now().toString(36).toUpperCase(),key,referredPhone:p,referredName:source.name||"Customer",referrerPhone:ref.phone,referralCode:ref.code,bonus:100,bookingId:source.bookingId||source.id,createdAt:Date.now()});save("shubhReferralTransactions",tx.slice(0,30000));return ref;}
+function lookupReferral(){let p=($('referralLookup')?.value||'').replace(/\D/g,'');if(!p){toast('Customer WhatsApp number dalo.');return}let a=referralAccount(p),link=referralLink(a);$('referralResult').innerHTML=`<b>${escapeHtml(a.name||'Customer')}</b><br>🔑 Referral Code: <b>${escapeHtml(a.code)}</b><br>🎁 Bonus Earned: <b>${money(a.bonus||0)}</b> • Successful Referrals: ${Number(a.successfulReferrals||0)}<br><small>${escapeHtml(link)}</small><br><button class="btn gold mini" onclick="shareReferral('${escapeHtml(a.phone)}')">📲 SHARE REFERRAL ON WHATSAPP</button>`;}
+function lookupDriverPackageOnly(){let p=($('driverPackageLookup')?.value||'').replace(/\D/g,'');if(!p){toast('Customer WhatsApp number dalo.');return}let rec=findLatestDriverPackage(p);$('driverPackageLookupResult').innerHTML=rec?`<b>${escapeHtml(rec.customerName||'Customer')}</b><br>👨‍✈️ Driver: ${escapeHtml(rec.driverName||'—')}<br>📞 Mobile: ${escapeHtml(phoneDisplay(rec.driverPhone))}<br>📦 ${escapeHtml(rec.packageName||'—')} • ${money(rec.packageCharge||0)}<br>📅 ${formatDateOnly(rec.joiningDate)} → ${formatDateOnly(rec.serviceEndDate)}<br>🟢 ${escapeHtml(rec.status||'ACTIVE')}<br><button class="btn outline mini" onclick="shareDriverPackage('${escapeHtml(rec.customerPhone)}')">📲 SHARE DRIVER DETAILS</button>`:'Permanent driver record nahi mila.';}
 function loyaltyAccount(phone,name){
  let p=String(phone||"").replace(/\D/g,""); if(!p)return null;
  let list=load("shubhLoyaltyAccounts","[]"),i=list.findIndex(x=>String(x.phone||"").replace(/\D/g,"")===p),a=i>=0?list[i]:{id:"LC-"+Date.now().toString(36).toUpperCase(),phone:p,name:name||"Customer",stamps:0,rewardUnlocked:false,totalCompleted:0,updatedAt:Date.now(),createdAt:Date.now()};
@@ -739,9 +770,10 @@ async function shareLoyaltyCard(phone,source){
 function shareDriverPackage(phone){let rec=findLatestDriverPackage(phone);if(!rec){toast("Is customer ka permanent driver package record nahi mila.");return}shareWhatsAppText(rec.customerPhone,driverPackageMessage(rec));}
 function shareLatestLoyaltyCard(){if(!lastBill){toast("Completed bill nahi mila.");return}let a=loyaltyAccount(lastBill.phone,lastBill.name);if(!a){toast("Customer record nahi mila.");return}shareLoyaltyCard(lastBill.phone,{...lastBill,bookingId:lastBill.bookingId||lastBill.id,completedAt:lastBill.end||Date.now()});}
 function shareLatestDriverPackage(){if(!lastBill){toast("Completed bill nahi mila.");return}shareDriverPackage(lastBill.phone);}
-function lookupCustomerLoyalty(){let p=$("loyaltyLookup").value.replace(/\D/g,"");if(!p){toast("Customer WhatsApp number dalo.");return}let a=loyaltyAccount(p),rec=findLatestDriverPackage(p);$("loyaltyLookupResult").innerHTML=a?`<b>${escapeHtml(a.name||"Customer")}</b><br>⭐ ${Number(a.stamps||0)}/5 stamps • ${Number(a.totalCompleted||0)} completed bookings<br>${a.rewardUnlocked?"🎁 ₹100 reward unlocked":"No reward unlocked yet"}${rec?`<br>👨‍✈️ ${escapeHtml(rec.driverName)} • ${escapeHtml(rec.packageName)} • ${money(rec.packageCharge)}<br>📅 ${formatDateOnly(rec.joiningDate)} → ${formatDateOnly(rec.serviceEndDate)}<br><button class="btn outline mini" onclick="shareDriverPackage('${escapeHtml(rec.customerPhone)}')">📤 SHARE DRIVER DETAILS</button>`:"<br>No permanent driver package."}<br><button class="btn gold mini" onclick="shareLoyaltyCard('${escapeHtml(p)}',{name:'${escapeHtml(a.name||"Customer")}'});return false">⭐ SHARE LOYALTY CARD</button>`:"Customer not found.";}
+function lookupCustomerLoyalty(){let p=$("loyaltyLookup").value.replace(/\D/g,"");if(!p){toast("Customer WhatsApp number dalo.");return}let a=loyaltyAccount(p);$("loyaltyLookupResult").innerHTML=a?`<b>${escapeHtml(a.name||"Customer")}</b><br>⭐ ${Number(a.stamps||0)}/5 stamps • ${Number(a.totalCompleted||0)} completed bookings<br>${a.rewardUnlocked?"🎁 ₹100 reward unlocked":"Complete 5 bookings → ₹100 OFF on next eligible booking"}<br><button class="btn gold mini" onclick="shareLoyaltyCard('${escapeHtml(p)}',{name:'${escapeHtml(a.name||"Customer")}'});return false">📲 SHARE LOYALTY CARD</button>`:"Customer not found.";}
 function bookingDataFromForm(){
  let name=$("customerName").value.trim(),phone=$("customerPhone").value.replace(/\D/g,""),sd=new Date($("startAt").value);
+ let urlRef=new URLSearchParams(location.search).get("ref")||localStorage.getItem("shubhPendingReferral")||"";
  if(!name||!phone||Number.isNaN(sd.getTime())){toast("Customer, WhatsApp aur journey date/time bharna zaroori hai.");return null}
  let assignedDriver=null;
  if($("newBookingDriverBox")&&!$("newBookingDriverBox").classList.contains("hidden")) assignedDriver=saveOrGetBookingDriver();
@@ -812,7 +844,7 @@ function confirmBooking(){
      return;
    }
    list.unshift(b);
-   save("shubhBookings",list.slice(0,1000));
+   save("shubhBookings",list.slice(0,50000));if(b.referralCode)localStorage.removeItem("shubhPendingReferral");
    lastBooking=b;
    saveDriverPackageRecord(b);
 
@@ -914,12 +946,12 @@ function unmarkDriver(id){updateBookingRecord(id,{driverSentAt:null});toast("Dri
 function sendBookingToDriver(id){
  let b=load("shubhBookings","[]").find(x=>x.id===id);if(!b||!b.driverPhone){toast("Driver number missing.");return}
  updateBookingRecord(id,{driverSentAt:Date.now(),status:"driver_sent"});
- let msg=`*SHUBH TOUR & TRAVELS — DUTY ASSIGNMENT*\n\n👨‍✈️ *Driver:* ${b.driverName}\n👤 *Customer:* ${b.name}\n📞 *Customer:* ${b.phone}\n🗓️ *Duty:* ${new Date(b.start).toLocaleString("en-IN")}\n🚘 *Service:* ${b.service==="car"?"Car Rental — "+b.vehicle:"Driver Service — "+(DRIVER[b.plan]?.label||"")}\n${b.service==="car"?`🔢 *Vehicle No:* ${b.vehicleNo||"To be shared"}\n`:""}🧾 *Booking ID:* ${b.id}\n\nPlease confirm duty.\n*Ride with Trust • Travel with Shubh*`;
+ let msg=`*SHUBH TOUR & TRAVELS — DUTY ASSIGNMENT*\n\n👨‍✈️ *Driver:* ${b.driverName}\n👤 *Customer:* ${b.name}\n📞 *Customer:* ${phoneDisplay(b.phone)}\n🗓️ *Duty:* ${new Date(b.start).toLocaleString("en-IN")}\n🚘 *Service:* ${b.service==="car"?"Car Rental — "+b.vehicle:"Driver Service — "+(DRIVER[b.plan]?.label||"")}\n${b.service==="car"?`🔢 *Vehicle No:* ${b.vehicleNo||"To be shared"}\n`:""}🧾 *Booking ID:* ${b.id}\n\nPlease confirm duty.\n*Ride with Trust • Travel with Shubh*`;
  location.href="https://wa.me/"+normalizeWhatsAppNumber(b.driverPhone)+"?text="+encodeURIComponent(msg);
 }
 function sendBookingReminderToCustomer(id){
  let b=load("shubhBookings","[]").find(x=>x.id===id);if(!b)return;
- let msg=`*SHUBH TOUR & TRAVELS — DUTY REMINDER*\n\nHello ${b.name},\n\nReminder: your booking is scheduled for *${bookingWhen(b)}*.\n\n🚘 *Service:* ${b.service==="car"?"Car Rental — "+b.vehicle:"Driver Service"}\n👨‍✈️ *Driver:* ${b.driverName}\n📞 *Driver:* ${b.driverPhone}\n🧾 *Booking ID:* ${b.id}\n\nPlease be ready at the scheduled pickup time.\n\n*Ride with Trust • Travel with Shubh*\n📞 6265584095 / 9893772425`;
+ let msg=`*SHUBH TOUR & TRAVELS — DUTY REMINDER*\n\nHello ${b.name},\n\nReminder: your booking is scheduled for *${bookingWhen(b)}*.\n\n🚘 *Service:* ${b.service==="car"?"Car Rental — "+b.vehicle:"Driver Service"}\n👨‍✈️ *Driver:* ${b.driverName}\n📞 *Driver:* ${phoneDisplay(b.driverPhone)}\n🧾 *Booking ID:* ${b.id}\n\nPlease be ready at the scheduled pickup time.\n\n*Ride with Trust • Travel with Shubh*\n📞 6265584095 / 9893772425`;
  location.href="https://wa.me/"+normalizeWhatsAppNumber(b.phone)+"?text="+encodeURIComponent(msg);
 }
 function enableBookingReminders(){
@@ -946,7 +978,7 @@ function checkBookingReminders(){
  try{renderBookingManager()}catch(e){}
 }
 
-function completeBooking(id){let b=load("shubhBookings","[]").find(x=>x.id===id);if(!b)return;let completedAt=b.completedAt||Date.now();let updated=updateBookingRecord(id,{completedAt,status:"completed"});if(updated){awardLoyaltyForCompletedRide({id:b.id,bookingId:b.id,phone:b.phone,name:b.name,completedAt});saveDriverPackageRecord(updated);toast("✅ Booking completed • Loyalty stamp added.");}}
+function completeBooking(id){let b=load("shubhBookings","[]").find(x=>x.id===id);if(!b)return;let completedAt=b.completedAt||Date.now();let updated=updateBookingRecord(id,{completedAt,status:"completed"});if(updated){awardLoyaltyForCompletedRide({id:b.id,bookingId:b.id,phone:b.phone,name:b.name,completedAt});processReferralForCompletedRide({id:b.id,bookingId:b.id,phone:b.phone,name:b.name,referralCode:b.referralCode});saveDriverPackageRecord(updated);toast("✅ Booking completed • Loyalty stamp added.");}}
 function cancelBooking(id){if(!confirm("Booking cancel karna hai?"))return;updateBookingRecord(id,{cancelledAt:Date.now(),status:"cancelled"});toast("Booking cancelled.")}
 function bookingConfirmationText(b){return `*SHUBH TOUR & TRAVELS*\n*BOOKING CONFIRMATION*\n\nHello ${b.name},\n\nYour booking is confirmed with Shubh Tour & Travels.\n\n🧾 *Booking ID:* ${b.id}\n📅 *Journey Date:* ${new Date(b.start).toLocaleDateString("en-IN")}\n⏰ *Pickup / Duty Time:* ${new Date(b.start).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}\n🚘 *Service:* ${b.service==="car"?"Car Rental":"Driver Service"}\n👨‍✈️ *Driver:* ${b.driverName}\n📞 *Driver Contact:* ${b.driverPhone||"Will be shared before journey"}\n${b.service==="car"?`🚗 *Vehicle:* ${b.vehicle}\n🔢 *Vehicle Number:* ${b.vehicleNo||"Will be shared before journey"}\n`:""}\n📌 *Status:* BOOKING CONFIRMED\n\nPlease keep this message for your journey. We will provide any final ride update before departure.\n\n*Ride with Trust • Travel with Shubh*\nThank you for choosing Shubh. We look forward to serving you.\n\n📞 6265584095 / 9893772425`}
 function whatsappBookingConfirmation(){if(!lastBooking)return;updateBookingRecord(lastBooking.id,{confirmationSentAt:Date.now(),status:"confirmed"});location.href="https://wa.me/"+normalizeWhatsAppNumber(lastBooking.phone)+"?text="+encodeURIComponent(bookingConfirmationText(lastBooking));}
@@ -966,7 +998,7 @@ function startDuty(){
  else {let di=service==="driver"?$("assignedDriver").value:$("carAssignedDriver").value; if(di!=="")assignedDriver=load("shubhDrivers","[]")[Number(di)]||null;}
  if(!assignedDriver){toast("Driver select karo ya new driver add karo.");return}
  if(service==="car" && $("assignedVendor").value!=="")assignedVendor=load("shubhVendors","[]")[Number($("assignedVendor").value)]||null;
- let linked=load("shubhBookings","[]").find(b=>b.phone===phone&&b.name===name&&b.service===service&&Math.abs(new Date(b.start)-sd)<86400000);active={id:"ST-"+Date.now().toString(36).toUpperCase(),bookingId:linked?.id||"",service,name,phone,start:sd.toISOString(),startKm:sk,plan:service==="driver"?$("driverPlan").value:null,packageKey:service==="driver"?($("driverPackage")?.value||linked?.packageKey||""):"",packageName:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).name||linked?.packageName||""):"",packageCharge:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).charge||linked?.packageCharge||0):0,joiningDate:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).joiningDate||linked?.joiningDate||""):"",serviceEndDate:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).serviceEndDate||linked?.serviceEndDate||""):"",car:service==="car"?$("car").value:null,carType:service==="car"?$("carType").value:null,bookingVehicleNo:service==="car"?$("bookingVehicleNo").value.trim():"",assignedDriverPhone:assignedDriver?.phone||"",assignedDriverName:assignedDriver?.name||"",assignedDriverLicense:assignedDriver?.license||"",assignedVendorPhone:assignedVendor?.phone||"",assignedVendorName:assignedVendor?.name||""};
+ let linked=load("shubhBookings","[]").find(b=>b.phone===phone&&b.name===name&&b.service===service&&Math.abs(new Date(b.start)-sd)<86400000);active={id:"ST-"+Date.now().toString(36).toUpperCase(),bookingId:linked?.id||"",service,name,phone,start:sd.toISOString(),startKm:sk,plan:service==="driver"?$("driverPlan").value:null,packageKey:service==="driver"?($("driverPackage")?.value||linked?.packageKey||""):"",packageName:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).name||linked?.packageName||""):"",packageCharge:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).charge||linked?.packageCharge||0):0,joiningDate:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).joiningDate||linked?.joiningDate||""):"",serviceEndDate:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).serviceEndDate||linked?.serviceEndDate||""):"",car:service==="car"?$("car").value:null,carType:service==="car"?$("carType").value:null,bookingVehicleNo:service==="car"?$("bookingVehicleNo").value.trim():"",assignedDriverPhone:assignedDriver?.phone||"",assignedDriverName:assignedDriver?.name||"",assignedDriverLicense:assignedDriver?.license||"",assignedVendorPhone:assignedVendor?.phone||"",assignedVendorName:assignedVendor?.name||"",referralCode:urlRef};
  save("shubhActive",active);showDuty();toast("✅ Duty START ho gayi.")}
 function showDuty(){
  go("duty");setDutyFields();$("rideStartCustomerBtn").classList.remove("hidden");$("dutyId").textContent=active.id;
@@ -1118,9 +1150,10 @@ function endDuty(){
  }
  let extraCharge=extraMin*extraRate/60,total=base+extraCharge+kmCharge+toll;
  lastBill={...active,billNo:nextBillNo(),end:ed.toISOString(),endKm:ek,actual,km,included,extraMin,extraCharge,kmRate,kmCharge,minimumKm,base,total,label,extraRate,toll,pricingRule,customRateApplied:(customKmRate!==null||customRent!==null),customKmRate,customRent,createdAt:Date.now()};
- let bills=load("shubhBills","[]");bills.unshift(lastBill);save("shubhBills",bills.slice(0,300));autoRecordWork(lastBill);
+ let bills=load("shubhBills","[]");bills.unshift(lastBill);save("shubhBills",bills.slice(0,50000));autoRecordWork(lastBill);
  let loyaltySource={id:lastBill.id,bookingId:active.bookingId||lastBill.id,phone:lastBill.phone,name:lastBill.name,completedAt:Date.now()};
  let loyalty=awardLoyaltyForCompletedRide(loyaltySource);
+ processReferralForCompletedRide({...loyaltySource,referralCode:active.referralCode});
  if(active.bookingId){let linked=updateBookingRecord(active.bookingId,{completedAt:Date.now(),status:"completed",end:lastBill.end,billNo:lastBill.billNo});if(linked)saveDriverPackageRecord(linked);}
  if(active.packageKey&&active.bookingId){let linked=load("shubhBookings","[]").find(x=>x.id===active.bookingId);if(linked)saveDriverPackageRecord(linked);}
  removeAndSync("shubhActive");active=null;clearInterval(timerInterval);renderBill();toast("✅ Duty complete. Bill generated • Loyalty stamp "+Number(loyalty?.stamps||0)+"/5.");
@@ -1170,22 +1203,22 @@ function selectedMonth(){
 }
 function populateMonths(){
  let bills=load("shubhBills","[]"), months=new Set([new Date().toISOString().slice(0,7)]);
- bills.forEach(b=>months.add(new Date(b.createdAt||b.end).toISOString().slice(0,7)));
+ bills.forEach(b=>{let dt=new Date(b.createdAt||b.end);if(!Number.isNaN(dt.getTime()))months.add(dt.toISOString().slice(0,7));});
  let arr=[...months].sort().reverse();
- $("monthFilter").innerHTML=arr.map(m=>{let d=new Date(m+"-01");return `<option value="${m}">${d.toLocaleString("en-IN",{month:"long",year:"numeric"})}</option>`}).join("");
- if(!arr.includes($("monthFilter").value)) $("monthFilter").value=arr[0];
+ $("monthFilter").innerHTML='<option value="ALL">All Time Turnover</option>'+arr.map(m=>{let d=new Date(m+"-01");return `<option value="${m}">${d.toLocaleString("en-IN",{month:"long",year:"numeric"})}</option>`}).join("");
+ if(!arr.includes($("monthFilter").value)&&$("monthFilter").value!=="ALL") $("monthFilter").value=arr[0];
 }
 function renderHome(){
  populateMonths();
  let c=load("shubhCustomers","[]"),all=load("shubhBills","[]"),m=selectedMonth();
- let bills=all.filter(b=>new Date(b.createdAt||b.end).toISOString().slice(0,7)===m);
+ let bills=m==="ALL"?all:all.filter(b=>{let dt=new Date(b.createdAt||b.end);return !Number.isNaN(dt.getTime())&&dt.toISOString().slice(0,7)===m;});
  let revenue=bills.reduce((s,b)=>s+Number(b.total||0),0),km=bills.reduce((s,b)=>s+Number(b.km||0),0);
  let drivers=bills.filter(b=>b.service==="driver"),cars=bills.filter(b=>b.service==="car");
  let unique=new Set(bills.map(b=>b.phone||b.name)).size;
  let driverRev=drivers.reduce((s,b)=>s+Number(b.total||0),0),carRev=cars.reduce((s,b)=>s+Number(b.total||0),0);
  let extraRev=bills.reduce((s,b)=>s+Number(b.extraCharge||0),0);
  let avg=bills.length?revenue/bills.length:0,total=bills.length||1,dp=Math.round(drivers.length/total*100),cp=100-dp;
- let d=new Date(m+"-01");$("dashSubtitle").textContent=d.toLocaleString("en-IN",{month:"long",year:"numeric"})+" performance overview";
+ let d=new Date(m+"-01");$("dashSubtitle").textContent=m==="ALL"?"All-time performance overview":d.toLocaleString("en-IN",{month:"long",year:"numeric"})+" performance overview";
  $("monthRevenue").textContent=money(revenue);$("monthBills").textContent=bills.length;$("monthCustomers").textContent=unique;$("monthKm").textContent=km.toFixed(1);
  $("driverCount").textContent=drivers.length;$("carCount").textContent=cars.length;$("avgBill").textContent=money(avg);
  $("driverPct").textContent=dp+"%";$("carPct").textContent=cp+"%";$("driverBar").style.width=dp+"%";$("carBar").style.width=cp+"%";
@@ -1202,7 +1235,8 @@ function deleteCustomerByPhone(phone){
  renderCustomers(); renderHome(); toast("Customer profile deleted.");
 }
 function quickCustomer(c){if(active){go("duty");return}resetForm();$("customerName").value=c.name;$("customerPhone").value=c.phone;go("booking")}
-function renderHistory(){let list=load("shubhBills","[]");$("historyList").innerHTML=list.length?list.map((b,i)=>`<div class="customer"><div class="avatar">₹</div><div class="grow"><b>${escapeHtml(b.name)}</b><small>${escapeHtml(b.billNo||"No Bill No.")} • ${escapeHtml(b.id)} • ${money(b.total)}</small></div><button class="btn outline mini" onclick="openBill(${i})">View</button><button class="btn danger mini" onclick="deleteSingleBill(${i})">Delete</button></div>`).join(""):`<div class="empty"><b>No bills yet</b>Completed duties will appear here.</div>`}
+function clearHistoryFilters(){if($("historyFrom"))$("historyFrom").value="";if($("historyTo"))$("historyTo").value="";if($("historySearch"))$("historySearch").value="";renderHistory();}
+function renderHistory(){let list=load("shubhBills","[]").slice().sort((a,b)=>new Date(b.createdAt||b.end)-new Date(a.createdAt||a.end));let from=$("historyFrom")?.value||"",to=$("historyTo")?.value||"",q=($("historySearch")?.value||"").toLowerCase().trim();let filtered=list.filter(b=>{let dt=new Date(b.createdAt||b.end);if(Number.isNaN(dt.getTime()))return false;let day=dt.toISOString().slice(0,10);if(from&&day<from)return false;if(to&&day>to)return false;let hay=[b.name,b.phone,b.id,b.billNo,b.service,b.vehicle,b.driverName,b.driverPhone].join(" ").toLowerCase();return !q||hay.includes(q);});let revenue=filtered.reduce((s,b)=>s+Number(b.total||0),0),cars=filtered.filter(b=>b.service==="car").length,drivers=filtered.filter(b=>b.service==="driver").length;$("historySummary").innerHTML=`<b>${filtered.length}</b> records • Turnover <b>${money(revenue)}</b> • 🚗 Car ${cars} • 👨‍✈️ Driver ${drivers}`;$("historyList").innerHTML=filtered.length?filtered.map(b=>{let i=list.indexOf(b),dt=new Date(b.createdAt||b.end);return `<div class="customer"><div class="avatar">₹</div><div class="grow"><b>${escapeHtml(b.name)}</b><small>📅 ${dt.toLocaleDateString("en-IN")} • ${dt.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</small><small>${escapeHtml(b.billNo||"No Bill No.")} • ${escapeHtml(b.id)} • ${money(b.total)}</small><small>${b.service==="car"?"🚗 Car Rental":"👨‍✈️ Driver Service"}${b.driverName?" • 👨‍✈️ "+escapeHtml(b.driverName):""}${b.vehicle?" • "+escapeHtml(b.vehicle):""}</small></div><button class="btn outline mini" onclick="openBill(${i})">View</button></div>`}).join(""): `<div class="empty"><b>No records found</b><br>Date/search filter hata kar all records dekho.</div>`;}
 function clearBillHistory(){
  if(!confirm("WARNING: Saare completed bills/history permanently delete ho jayenge. Continue?")) return;
  removeAndSync("shubhBills"); lastBill=null; renderHistory(); renderHome(); toast("Bill history deleted.");
@@ -1229,7 +1263,7 @@ async function downloadBillImage(){if(!lastBill)return;let blob=await imageBlob(
 async function shareBillImage(){if(!lastBill)return;let blob=await imageBlob(),file=new File([blob],`Shubh-Tour-Travels-${lastBill.id}.png`,{type:"image/png"});try{if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){await navigator.share({title:"Shubh Tour & Travels Bill",text:"Final bill",files:[file]})}else{await downloadBillImage();toast("Image share supported nahi hai; image download ho gayi. WhatsApp me attach kar sakte ho.")}}catch(e){}}
 async function whatsappBillImage(){if(!lastBill)return;let blob=await imageBlob(),file=new File([blob],`Shubh-Tour-Travels-${lastBill.id}.png`,{type:"image/png"});try{if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){await navigator.share({title:"Shubh Tour & Travels Bill",text:"Final bill",files:[file]});return}downloadBillImage();let p=(lastBill.phone||"").replace(/\D/g,"");setTimeout(()=>{location.href=`https://wa.me/${p||"916265584095"}?text=${encodeURIComponent("Shubh Tour & Travels — Final Bill "+lastBill.id+" | Total "+money(lastBill.total)+". Bill image downloaded; WhatsApp me attach karke send kar dein.")}`},1200)}catch(e){}}
 ["shareCustomerName","shareCustomerPhone","manualDriverName","manualDriverPhone","manualVehicleNo","manualVehicle"].forEach(id=>{let e=document.getElementById(id);if(e)e.addEventListener("input",updateDriverMessagePreview)});
-(function init(){setService("driver");$("startAt").value=nowLocal();$("endAt").value=nowLocal();if($("ledgerDate"))$("ledgerDate").value=new Date().toISOString().slice(0,10);populateAssignmentSelects();populateManualDriverSelect();if($("fleetStartDate"))$("fleetStartDate").value=fleetToday();if($("fleetReturnDate"))$("fleetReturnDate").value=fleetToday();active=load("shubhActive","null");if(active)showDuty();renderHome();setTimeout(checkBookingReminders,700);setInterval(checkBookingReminders,60000)})();
+(function init(){let initialRef=new URLSearchParams(location.search).get("ref");if(initialRef){let r=findReferralByCode(initialRef);if(r)localStorage.setItem("shubhPendingReferral",String(r.code).toUpperCase());}setService("driver");$("startAt").value=nowLocal();$("endAt").value=nowLocal();if($("ledgerDate"))$("ledgerDate").value=new Date().toISOString().slice(0,10);populateAssignmentSelects();populateManualDriverSelect();if($("fleetStartDate"))$("fleetStartDate").value=fleetToday();if($("fleetReturnDate"))$("fleetReturnDate").value=fleetToday();active=load("shubhActive","null");if(active)showDuty();renderHome();setTimeout(checkBookingReminders,700);setInterval(checkBookingReminders,60000)})();
 loadSyncSettings();
 setTimeout(()=>{if(localStorage.getItem("shubhSyncUrl")){syncPull(true).catch(()=>{})}},900);
 window.addEventListener("online",()=>{if(localStorage.getItem("shubhSyncUrl"))syncNow(true)});
