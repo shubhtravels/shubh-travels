@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#07152b">
-<title>Shubh Tour & Travels — V4.2</title>
-<!-- V4.2: reliable duty persistence, date-wise duty billing, loyalty sharing fallback, and 1-step back navigation. -->
+<title>Shubh Tour & Travels — V4.3</title>
+<!-- V4.3: restored referral program with ₹100 first-completed-booking reward and deep-link support. -->
 <style>
 :root{--nav:#07152b;--nav2:#10294b;--gold:#f3b719;--gold2:#ffd45b;--bg:#f4f6f9;--ink:#132238;--muted:#667085;--line:#e4e7ec;--green:#087443;--red:#c53030}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}.app{max-width:680px;margin:auto;min-height:100vh;padding-bottom:92px}
@@ -159,6 +159,21 @@ header{background:linear-gradient(145deg,#050b14,#10294b);color:#fff;padding:12p
  </div>
  <div id="loyaltyLookupResult" class="muted" style="margin-top:8px">Customer number dalo.</div>
 </div>
+<div class="card" id="homeBottomReferral">
+ <h3>🎁 Referral Program — Refer & Earn ₹100</h3>
+ <p class="muted">Har customer ka unique referral code banao aur WhatsApp par share karo. Referred customer ki first completed booking ke baad ₹100 bonus milega.</p>
+ <label>Customer WhatsApp Number</label>
+ <div class="grid2">
+  <input id="referralLookup" placeholder="Customer WhatsApp number" inputmode="numeric">
+  <button class="btn gold" onclick="lookupReferral()">🔎 REFERRAL</button>
+ </div>
+ <div id="referralResult" class="muted" style="margin-top:8px">Customer number dalo.</div>
+ <div style="margin-top:14px;border-top:1px solid #e4e7ec;padding-top:12px">
+  <label>Admin: Referral Code se Referrer Check</label>
+  <div class="grid2"><input id="referralCodeAdmin" placeholder="STXXXXXXX" style="text-transform:uppercase"><button class="btn outline" onclick="lookupReferralByCode()">🔎 FIND REFERRER</button></div>
+  <div id="referralAdminResult" class="muted" style="margin-top:8px">Code dalo to referrer aur successful referrals dikhenge.</div>
+ </div>
+</div>
 <div class="card reminderCard">
  <div class="reminderHead"><div><h3>📅 Upcoming Bookings & Reminders</h3><p class="muted">Kal/आज ki duty, driver assignment aur confirmation status yahin dikhega.</p></div><span id="reminderCount" class="reminderBadge">0</span></div>
  <div id="homeUpcomingBookings"></div>
@@ -224,6 +239,7 @@ header{background:linear-gradient(145deg,#050b14,#10294b);color:#fff;padding:12p
 <div id="suggestions"></div>
 <label>Customer Name</label><input id="customerName" placeholder="Customer name">
 <label>WhatsApp Number</label><input id="customerPhone" inputmode="numeric" placeholder="919xxxxxxxxx">
+<label>Referral Code (optional)</label><input id="bookingReferralCode" placeholder="Example: STXXXXXXX" style="text-transform:uppercase">
 <div class="grid2"><div><label>Start Date & Time</label><input id="startAt" type="datetime-local"></div><div><label>Start KM</label><input id="startKm" type="number" min="0" step=".1" placeholder="25000"></div></div>
 <button class="btn gold" onclick="confirmBooking()">✅ CONFIRM BOOKING</button>
 <button class="btn green" onclick="startDuty()">▶ START DUTY</button>
@@ -484,7 +500,7 @@ function populateShareCustomers(){
  $("shareCustomerSelect").innerHTML='<option value="">Select saved customer</option>'+list.map((c,i)=>`<option value="${i}">${escapeHtml(c.name)} • ${escapeHtml(c.phone)}</option>`).join("");
 }
 function newBooking(){if(active){toast("Active duty chal rahi hai. Pehle usko complete karo.");go("duty");return}resetForm();populateAssignmentSelects();go("booking")}
-function resetForm(){customerName.value="";customerPhone.value="";customerSearch.value="";startKm.value="";if($('driverPackage'))$('driverPackage').value="";$("startAt").value=nowLocal();$("suggestions").innerHTML="";if($("assignedDriver"))$("assignedDriver").value="";if($("assignedVendor"))$("assignedVendor").value="";if($("newBookingDriverBox"))$("newBookingDriverBox").classList.add("hidden");["newBookingDriverName","newBookingDriverPhone","newBookingDriverLicense","bookingVehicleNo"].forEach(id=>{if($(id))$(id).value=""});}
+function resetForm(){customerName.value="";customerPhone.value="";customerSearch.value="";if($('bookingReferralCode'))$('bookingReferralCode').value="";startKm.value="";if($('driverPackage'))$('driverPackage').value="";$("startAt").value=nowLocal();$("suggestions").innerHTML="";if($("assignedDriver"))$("assignedDriver").value="";if($("assignedVendor"))$("assignedVendor").value="";if($("newBookingDriverBox"))$("newBookingDriverBox").classList.add("hidden");["newBookingDriverName","newBookingDriverPhone","newBookingDriverLicense","bookingVehicleNo"].forEach(id=>{if($(id))$(id).value=""});}
 
 
 let shareMode="saved";
@@ -810,6 +826,95 @@ function lookupCustomerLoyalty(){
  const shareBtn=$("lookupLoyaltyShareBtn");
  if(shareBtn){shareBtn.onclick=()=>shareLoyaltyCard(p,{name:a.name||"Customer"});}
 }
+function makeReferralCode(){
+ let chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",list=load("shubhReferralAccounts","[]");
+ for(let attempt=0;attempt<100;attempt++){
+  let code="ST";for(let i=0;i<7;i++)code+=chars[Math.floor(Math.random()*chars.length)];
+  let exists=list.some(x=>String(x.code||"").toUpperCase()===code||(Array.isArray(x.legacyCodes)&&x.legacyCodes.map(v=>String(v).toUpperCase()).includes(code)));
+  if(!exists)return code;
+ }
+ return "ST"+Date.now().toString(36).toUpperCase().replace(/[^A-Z0-9]/g,"").slice(-7);
+}
+function referralAccount(phone,name){
+ let p=String(phone||"").replace(/\D/g,"");if(!p)return null;
+ let list=load("shubhReferralAccounts","[]"),i=list.findIndex(x=>String(x.phone||x.ownerPhone||"").replace(/\D/g,"")===p);
+ let a=i>=0?list[i]:{id:"RF-"+Date.now().toString(36).toUpperCase(),phone:p,name:name||"Customer",code:makeReferralCode(),legacyCodes:[],bonus:0,earned:0,successfulReferrals:0,pendingReferrals:0,updatedAt:Date.now(),createdAt:Date.now()};
+ if(i>=0){
+  a.phone=p;a.name=name||a.name||a.ownerName||"Customer";
+  if(!a.code)a.code=makeReferralCode();
+  if(!Array.isArray(a.legacyCodes))a.legacyCodes=[];
+  if(a.ownerPhone&&!a.phone)a.phone=a.ownerPhone;
+  if(a.ownerName&&!a.name)a.name=a.ownerName;
+  if(a.earned==null)a.earned=Number(a.bonus||0);
+ }
+ let oldCode="ST"+p.slice(-6);
+ if(a.code===oldCode){if(!Array.isArray(a.legacyCodes))a.legacyCodes=[];if(!a.legacyCodes.includes(oldCode))a.legacyCodes.push(oldCode);a.code=makeReferralCode();}
+ if(!Array.isArray(a.legacyCodes))a.legacyCodes=[];
+ a.ownerPhone=a.phone;a.ownerName=a.name;a.bonus=Number(a.bonus!=null?a.bonus:a.earned||0);a.earned=Number(a.earned!=null?a.earned:a.bonus||0);
+ if(i<0)list.unshift(a);else list[i]=a;
+ save("shubhReferralAccounts",list.slice(0,10000));return a;
+}
+function findReferralByCode(code){
+ let c=String(code||"").trim().toUpperCase();if(!c)return null;
+ return load("shubhReferralAccounts","[]").find(x=>String(x.code||"").toUpperCase()===c||(Array.isArray(x.legacyCodes)&&x.legacyCodes.map(v=>String(v).toUpperCase()).includes(c)))||null;
+}
+function referralLink(a){
+ let text=`Namaste, mujhe Shubh Tour & Travels & Driver Services se service leni hai. Referral Code: ${a.code}`;
+ return `https://wa.me/916265584095?text=${encodeURIComponent(text)}`;
+}
+function shareReferral(phone){
+ let a=referralAccount(phone);if(!a)return;
+ location.href="https://wa.me/?text="+encodeURIComponent(referralMessage(a));
+}
+function referralMessage(a){
+ return `*SHUBH TOUR & TRAVELS & DRIVER SERVICES*\n\n🎁 *Refer & Earn ₹100*\n\nAapka referral code: *${a.code}*\n\nApne friend/family ko ye WhatsApp link bhejiye:\n${referralLink(a)}\n\nLink kholne par hamare WhatsApp par aapka referral code message me aa jayega. Naya customer first completed booking karega to aapko *₹100 bonus* milega.\n\n📞 6265584095 / 9893772425`;
+}
+function lookupReferral(){
+ let p=($('referralLookup')?.value||'').replace(/\D/g,'');
+ if(!p){toast('Customer WhatsApp number dalo.');return}
+ let c=load('shubhCustomers','[]').find(x=>String(x.phone||'').replace(/\D/g,'')===p),a=referralAccount(p,c?.name);
+ let tx=load('shubhReferralTransactions','[]').filter(x=>String(x.referrerPhone||x.ownerPhone||'').replace(/\D/g,'')===p);
+ $('referralResult').innerHTML=`<b>${escapeHtml(a.name||'Customer')}</b><br>📞 Referrer Mobile: <b>${escapeHtml(a.phone)}</b><br>🔑 Referral Code: <b>${escapeHtml(a.code)}</b><br>🎁 Bonus Earned: <b>${money(a.bonus||a.earned||0)}</b> • Successful Referrals: ${Number(a.successfulReferrals||0)}<br><small>WhatsApp Link: ${escapeHtml(referralLink(a))}</small><br>${tx.length?'<hr>'+tx.map(x=>`👤 Referred Customer: <b>${escapeHtml(x.referredName||'Customer')}</b> • 📞 ${escapeHtml(x.referredPhone||'—')}<br>🗓️ ${new Date(x.createdAt||Date.now()).toLocaleDateString('en-IN')} • Bonus ${money(x.bonus||100)}`).join('<br>'):'<br>No successful referral record yet.'}<br><button class="btn gold mini" onclick="shareReferral('${escapeHtml(a.phone)}')">📲 SHARE REFERRAL ON WHATSAPP</button>`;
+}
+function lookupReferralByCode(){
+ let code=($('referralCodeAdmin')?.value||'').trim().toUpperCase();
+ if(!code){toast('Referral code dalo.');return}
+ let a=findReferralByCode(code);
+ if(!a){$('referralAdminResult').innerHTML='<span style="color:#b42318;font-weight:800">Referral code nahi mila.</span>';return}
+ let p=String(a.phone||a.ownerPhone||'').replace(/\D/g,''),tx=load('shubhReferralTransactions','[]').filter(x=>String(x.referrerPhone||x.ownerPhone||'').replace(/\D/g,'')===p);
+ $('referralAdminResult').innerHTML=`<b>REFERRER FOUND</b><br>👤 Name: <b>${escapeHtml(a.name||a.ownerName||'Customer')}</b><br>📞 Mobile: <b>${escapeHtml(a.phone||a.ownerPhone||'')}</b><br>🔑 Code: <b>${escapeHtml(a.code)}</b><br>🎁 Bonus: <b>${money(a.bonus||a.earned||0)}</b> • Successful: ${Number(a.successfulReferrals||0)}<hr>${tx.length?tx.map(x=>`👤 Referred Customer: <b>${escapeHtml(x.referredName||'Customer')}</b><br>📞 Referred Mobile: <b>${escapeHtml(x.referredPhone||'—')}</b><br>🗓️ Completed: ${new Date(x.createdAt||Date.now()).toLocaleString('en-IN')}<br>💰 Bonus: ${money(x.bonus||100)}<br>`).join('<hr>'):'Is code se abhi koi successful referral nahi mila.'}`;
+}
+function processReferralForCompletedRide(source){
+ let code=String(source?.referralCode||source?.refCode||'').trim().toUpperCase();
+ if(!code&&source?.bookingId){let rb=load('shubhBookings','[]').find(b=>b.id===source.bookingId);code=String(rb?.referralCode||'').trim().toUpperCase();}
+ if(!code)return null;
+ let ref=findReferralByCode(code);if(!ref)return null;
+ let refPhone=String(ref.phone||ref.ownerPhone||'').replace(/\D/g,''),p=String(source.phone||'').replace(/\D/g,'');
+ if(!p||p===refPhone)return null;
+ let tx=load('shubhReferralTransactions','[]');
+ // One ₹100 reward per referred customer, on that customer's FIRST completed booking only.
+ if(tx.some(x=>String(x.referredPhone||'').replace(/\D/g,'')===p))return ref;
+ let key=String(source.bookingId||source.id||source.billNo||Date.now())+'|'+ref.code;
+ if(tx.some(x=>x.key===key))return ref;
+ ref.bonus=Number(ref.bonus||ref.earned||0)+100;ref.earned=ref.bonus;ref.successfulReferrals=Number(ref.successfulReferrals||0)+1;ref.updatedAt=Date.now();ref.phone=ref.phone||ref.ownerPhone;ref.name=ref.name||ref.ownerName;
+ let list=load('shubhReferralAccounts','[]'),i=list.findIndex(x=>x.id===ref.id);if(i>=0)list[i]=ref;else list.unshift(ref);save('shubhReferralAccounts',list.slice(0,10000));
+ tx.unshift({id:'RT-'+Date.now().toString(36).toUpperCase(),key,referredPhone:p,referredName:source.name||'Customer',referrerPhone:ref.phone,referrerName:ref.name||'Customer',referralCode:ref.code,bonus:100,bookingId:source.bookingId||source.id,billNo:source.billNo||null,createdAt:Date.now()});save('shubhReferralTransactions',tx.slice(0,30000));return ref;
+}
+function bookingDataFromForm(){
+ let name=$("customerName").value.trim(),phone=$("customerPhone").value.replace(/\D/g,""),sd=new Date($("startAt").value);
+ let urlRef=new URLSearchParams(location.search).get("ref")||localStorage.getItem("shubhPendingReferral")||"";
+ let manualRef=$("bookingReferralCode")?.value.trim().toUpperCase()||"",refCode=manualRef||urlRef.trim().toUpperCase();
+ if(!name||!phone||Number.isNaN(sd.getTime())){toast("Customer, WhatsApp aur journey date/time bharna zaroori hai.");return null}
+ if(refCode&&!findReferralByCode(refCode)){toast("Referral code nahi mila. Code check karo.");return null}
+ let assignedDriver=null;
+ if($("newBookingDriverBox")&&!$("newBookingDriverBox").classList.contains("hidden")) assignedDriver=saveOrGetBookingDriver();
+ else {let di=service==="driver"?$("assignedDriver").value:$("carAssignedDriver").value;if(di!=="")assignedDriver=load("shubhDrivers","[]")[Number(di)]||null;}
+ if(!assignedDriver)assignedDriver={name:"Driver Pending",phone:"",license:""};
+ let vendor=null;if(service==="car"&&$("assignedVendor").value!=="")vendor=load("shubhVendors","[]")[Number($("assignedVendor").value)]||null;
+ let packageKey=service==="driver"?($("driverPackage")?.value||""):"",packageInfo=getDriverPackageInfo(packageKey,sd);
+ return {id:"BK-"+Date.now().toString(36).toUpperCase(),createdAt:Date.now(),name,phone,start:sd.toISOString(),service,driverName:assignedDriver.name,driverPhone:assignedDriver.phone,driverLicense:assignedDriver.license||"",vehicle:service==="car"?(CAR[$("car").value]?.name||$("car").value):"",vehicleNo:service==="car"?$("bookingVehicleNo").value.trim():"",vendorName:vendor?.name||"",vendorPhone:vendor?.phone||"",plan:service==="driver"?$("driverPlan").value:"",carType:service==="car"?$("carType").value:"",referralCode:refCode,packageKey,packageName:packageInfo.name,packageCharge:packageInfo.charge,joiningDate:packageInfo.joiningDate,serviceEndDate:packageInfo.serviceEndDate};
+}
+
 function renderBookingReceipt(){
  let b=lastBooking;
  if(!b){toast("Booking data nahi mili.");return false}
@@ -848,6 +953,7 @@ function confirmBooking(){
    const customer={name:b.name,phone:b.phone,lastUsed:Date.now()};
    if(ci>=0)customers[ci]={...customers[ci],...customer};else customers.unshift(customer);
    save("shubhCustomers",customers.slice(0,500));
+   referralAccount(b.phone,b.name);
 
    b.status="confirmed";
    b.confirmationSentAt=null;
@@ -871,6 +977,7 @@ function confirmBooking(){
    }
    list.unshift(b);
    save("shubhBookings",list.slice(0,1000));
+   if(b.referralCode)localStorage.removeItem("shubhPendingReferral");
    lastBooking=b;
    saveDriverPackageRecord(b);
 
@@ -1024,7 +1131,7 @@ function startDuty(){
  else {let di=service==="driver"?$("assignedDriver").value:$("carAssignedDriver").value; if(di!=="")assignedDriver=load("shubhDrivers","[]")[Number(di)]||null;}
  if(!assignedDriver){toast("Driver select karo ya new driver add karo.");return}
  if(service==="car" && $("assignedVendor").value!=="")assignedVendor=load("shubhVendors","[]")[Number($("assignedVendor").value)]||null;
- let linked=load("shubhBookings","[]").find(b=>b.phone===phone&&b.name===name&&b.service===service&&Math.abs(new Date(b.start)-sd)<86400000);active={id:"ST-"+Date.now().toString(36).toUpperCase(),bookingId:linked?.id||"",service,name,phone,start:sd.toISOString(),startKm:sk,plan:service==="driver"?$("driverPlan").value:null,packageKey:service==="driver"?($("driverPackage")?.value||linked?.packageKey||""):"",packageName:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).name||linked?.packageName||""):"",packageCharge:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).charge||linked?.packageCharge||0):0,joiningDate:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).joiningDate||linked?.joiningDate||""):"",serviceEndDate:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).serviceEndDate||linked?.serviceEndDate||""):"",car:service==="car"?$("car").value:null,carType:service==="car"?$("carType").value:null,bookingVehicleNo:service==="car"?$("bookingVehicleNo").value.trim():"",assignedDriverPhone:assignedDriver?.phone||"",assignedDriverName:assignedDriver?.name||"",assignedDriverLicense:assignedDriver?.license||"",assignedVendorPhone:assignedVendor?.phone||"",assignedVendorName:assignedVendor?.name||""};
+ let linked=load("shubhBookings","[]").find(b=>b.phone===phone&&b.name===name&&b.service===service&&Math.abs(new Date(b.start)-sd)<86400000);active={id:"ST-"+Date.now().toString(36).toUpperCase(),bookingId:linked?.id||"",service,name,phone,start:sd.toISOString(),startKm:sk,plan:service==="driver"?$("driverPlan").value:null,packageKey:service==="driver"?($("driverPackage")?.value||linked?.packageKey||""):"",packageName:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).name||linked?.packageName||""):"",packageCharge:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).charge||linked?.packageCharge||0):0,joiningDate:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).joiningDate||linked?.joiningDate||""):"",serviceEndDate:service==="driver"?(getDriverPackageInfo($("driverPackage")?.value||linked?.packageKey||"",sd).serviceEndDate||linked?.serviceEndDate||""):"",referralCode:($("bookingReferralCode")?.value||linked?.referralCode||localStorage.getItem("shubhPendingReferral")||"").trim().toUpperCase(),car:service==="car"?$("car").value:null,carType:service==="car"?$("carType").value:null,bookingVehicleNo:service==="car"?$("bookingVehicleNo").value.trim():"",assignedDriverPhone:assignedDriver?.phone||"",assignedDriverName:assignedDriver?.name||"",assignedDriverLicense:assignedDriver?.license||"",assignedVendorPhone:assignedVendor?.phone||"",assignedVendorName:assignedVendor?.name||""};
  save("shubhActive",active);showDuty();toast("✅ Duty START ho gayi.")}
 function showDuty(){
  go("duty");setDutyFields();$("rideStartCustomerBtn").classList.remove("hidden");$("dutyId").textContent=active.id;
@@ -1189,11 +1296,12 @@ function endDuty(){
  let extraCharge=extraMin*extraRate/60,total=base+extraCharge+kmCharge+toll;
  lastBill={...active,billNo:nextBillNo(),end:ed.toISOString(),endKm:ek,actual,km,included,extraMin,extraCharge,kmRate,kmCharge,minimumKm,base,total,label,extraRate,toll,pricingRule,dutyDays,dutyDates,serviceDate:new Date(sd.getFullYear(),sd.getMonth(),sd.getDate()).toISOString().slice(0,10),customRateApplied:(customKmRate!==null||customRent!==null),customKmRate,customRent,createdAt:Date.now()};
  let bills=load("shubhBills","[]");bills.unshift(lastBill);save("shubhBills",bills.slice(0,300));autoRecordWork(lastBill);
- let loyaltySource={id:lastBill.id,bookingId:active.bookingId||lastBill.id,phone:lastBill.phone,name:lastBill.name,completedAt:Date.now()};
+ let loyaltySource={id:lastBill.id,bookingId:active.bookingId||lastBill.id,phone:lastBill.phone,name:lastBill.name,completedAt:Date.now(),billNo:lastBill.billNo,referralCode:active.referralCode||""};
  let loyalty=awardLoyaltyForCompletedRide(loyaltySource);
+ let referralReward=processReferralForCompletedRide(loyaltySource);
  if(active.bookingId){let linked=updateBookingRecord(active.bookingId,{completedAt:Date.now(),status:"completed",end:lastBill.end,billNo:lastBill.billNo});if(linked)saveDriverPackageRecord(linked);}
  if(active.packageKey&&active.bookingId){let linked=load("shubhBookings","[]").find(x=>x.id===active.bookingId);if(linked)saveDriverPackageRecord(linked);}
- removeAndSync("shubhActive");active=null;clearInterval(timerInterval);renderBill();toast("✅ Duty complete. Bill generated • Loyalty stamp "+Number(loyalty?.stamps||0)+"/5.");
+ removeAndSync("shubhActive");active=null;clearInterval(timerInterval);renderBill();toast("✅ Duty complete. Bill generated • Loyalty stamp "+Number(loyalty?.stamps||0)+"/5."+(referralReward?" • Referral ₹100 added.":""));
 }
 function updateBillCharges(){
  if(!lastBill){toast("No bill open.");return}
@@ -1306,6 +1414,8 @@ async function shareBillImage(){if(!lastBill)return;let blob=await imageBlob(),f
 async function whatsappBillImage(){if(!lastBill)return;let blob=await imageBlob(),file=new File([blob],`Shubh-Tour-Travels-${lastBill.id}.png`,{type:"image/png"});try{if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){await navigator.share({title:"Shubh Tour & Travels Bill",text:"Final bill",files:[file]});return}downloadBillImage();let p=(lastBill.phone||"").replace(/\D/g,"");setTimeout(()=>{location.href=`https://wa.me/${p||"916265584095"}?text=${encodeURIComponent("Shubh Tour & Travels — Final Bill "+lastBill.id+" | Total "+money(lastBill.total)+". Bill image downloaded; WhatsApp me attach karke send kar dein.")}`},1200)}catch(e){}}
 ["shareCustomerName","shareCustomerPhone","manualDriverName","manualDriverPhone","manualVehicleNo","manualVehicle"].forEach(id=>{let e=document.getElementById(id);if(e)e.addEventListener("input",updateDriverMessagePreview)});
 (function init(){
+ let initialRef=new URLSearchParams(location.search).get("ref");
+ if(initialRef&&findReferralByCode(initialRef))localStorage.setItem("shubhPendingReferral",String(initialRef).toUpperCase());
  setService("driver");
  $("startAt").value=nowLocal();$("endAt").value=nowLocal();
  if($("ledgerDate"))$("ledgerDate").value=new Date().toISOString().slice(0,10);
@@ -1335,12 +1445,12 @@ window.addEventListener("unhandledrejection",e=>{try{console.error("Shubh app pr
   if(btn) btn.addEventListener('click',async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;btn.style.display='none';});
   window.addEventListener('appinstalled',()=>{if(btn)btn.style.display='none';});
   if('serviceWorker' in navigator && location.protocol==='https:'){
- const SW_FIX_VERSION='4.2';
+ const SW_FIX_VERSION='4.3';
  if(localStorage.getItem('__shubh_sw_fix')!==SW_FIX_VERSION){
   localStorage.setItem('__shubh_sw_fix',SW_FIX_VERSION);
   navigator.serviceWorker.getRegistrations().then(rs=>Promise.all(rs.map(r=>r.unregister()))).then(()=>location.reload()).catch(()=>location.reload());
  }else{
-  navigator.serviceWorker.register('./sw.js?v=42').catch(console.error);
+  navigator.serviceWorker.register('./sw.js?v=43').catch(console.error);
  }
 }
 })();
