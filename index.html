@@ -82,6 +82,11 @@ header{background:linear-gradient(145deg,#050b14,#10294b);color:#fff;padding:12p
   <div><h2>Business Dashboard</h2><p id="dashSubtitle">Monthly performance overview</p></div>
   <select class="monthSelect" id="monthFilter" onchange="renderHome()"></select>
  </div>
+ <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
+  <label style="color:#d9e3ef;margin:0">Exact Date</label>
+  <input id="dateFilter" type="date" onchange="renderHome()" style="background:#ffffff12;border:1px solid #ffffff25;color:#fff;padding:9px;border-radius:10px;font-weight:800;max-width:160px">
+  <button class="pill" type="button" onclick="clearDashboardDate()" style="border:1px solid #ffffff25;background:#ffffff12;color:#fff;cursor:pointer">CLEAR DATE</button>
+ </div>
  <div class="kpiGrid">
   <div class="kpi gold"><b id="monthRevenue">₹0</b><span>MONTHLY REVENUE</span></div>
   <div class="kpi"><b id="monthBills">0</b><span>COMPLETED BOOKINGS</span></div>
@@ -1061,6 +1066,7 @@ function bookingReminderCard(b){
    <button class="btn outline mini" onclick="sendBookingReminderToCustomer('${b.id}')">📲 CUSTOMER REMINDER</button>
    ${b.confirmationSentAt?"<button class='btn outline mini' onclick='unmarkConfirmation(\""+b.id+"\")'>↩ Confirmation</button>":"<button class='btn gold mini' onclick='markBookingById(\""+b.id+"\",\"confirmationSentAt\")'>✅ CONFIRM SENT</button>"}
    ${b.driverSentAt?"<button class='btn outline mini' onclick='unmarkDriver(\""+b.id+"\")'>↩ Driver Sent</button>":"<button class='btn gold mini' onclick='markBookingById(\""+b.id+"\",\"driverSentAt\")'>👨‍✈️ DRIVER SENT</button>"}
+   <button class="btn dark mini" data-booking="${b.id}" onclick="openBillingFromBookingManager(this.dataset.booking)">🧾 BILL</button>
   </div>
  </div>`;
 }
@@ -1424,23 +1430,26 @@ function selectedMonth(){
  return v||new Date().toISOString().slice(0,7);
 }
 function populateMonths(){
- let bills=load("shubhBills","[]"),bookings=load("shubhBookings","[]"),months=new Set([new Date().toISOString().slice(0,7)]);
- bills.forEach(b=>{let m=bookingMonthKey(b);if(m)months.add(m)});bookings.forEach(b=>{let m=bookingMonthKey(b);if(m)months.add(m)});
- let arr=[...months].sort().reverse();
- $("monthFilter").innerHTML=arr.map(m=>{let d=new Date(m+"-01");return `<option value="${m}">${d.toLocaleString("en-IN",{month:"long",year:"numeric"})}</option>`}).join("");
- if(!arr.includes($("monthFilter").value)) $("monthFilter").value=arr[0];
+ let bills=load("shubhBills","[]"),bookings=load("shubhBookings","[]"),months=new Set();
+ bills.forEach(b=>{let m=bookingMonthKey(b);if(m)months.add(m)});
+ bookings.forEach(b=>{let m=bookingMonthKey(b);if(m)months.add(m)});
+ let arr=[...months].sort().reverse(),current=$("monthFilter").value;
+ $("monthFilter").innerHTML='<option value="ALL">All Time Turnover</option>'+arr.map(m=>{let d=new Date(m+"-01");return `<option value="${m}">${d.toLocaleString("en-IN",{month:"long",year:"numeric"})}</option>`}).join("");
+ if(current==="ALL"||arr.includes(current)) $("monthFilter").value=current;
+ else $("monthFilter").value=arr[0]||"ALL";
 }
+function clearDashboardDate(){if($("dateFilter"))$("dateFilter").value="";renderHome();}
 function renderHome(){
  populateMonths();
- let c=load("shubhCustomers","[]"),all=load("shubhBills","[]"),m=selectedMonth();
- let bills=all.filter(b=>new Date(b.createdAt||b.end).toISOString().slice(0,7)===m);
+ let c=load("shubhCustomers","[]"),all=load("shubhBills","[]"),m=selectedMonth(),specificDate=$("dateFilter")?.value||"";
+ let bills=specificDate?all.filter(b=>{let dt=new Date(b.createdAt||b.end||b.serviceDate);return !Number.isNaN(dt.getTime())&&dt.toISOString().slice(0,10)===specificDate;}):(m==="ALL"?all:all.filter(b=>{let dt=new Date(b.createdAt||b.end||b.serviceDate);return !Number.isNaN(dt.getTime())&&dt.toISOString().slice(0,7)===m;}));
  let revenue=bills.reduce((s,b)=>s+Number(b.total||0),0),km=bills.reduce((s,b)=>s+Number(b.km||0),0);
  let drivers=bills.filter(b=>b.service==="driver"),cars=bills.filter(b=>b.service==="car");
  let unique=new Set(bills.map(b=>b.phone||b.name)).size;
  let driverRev=drivers.reduce((s,b)=>s+Number(b.total||0),0),carRev=cars.reduce((s,b)=>s+Number(b.total||0),0);
  let extraRev=bills.reduce((s,b)=>s+Number(b.extraCharge||0),0);
  let avg=bills.length?revenue/bills.length:0,total=bills.length||1,dp=Math.round(drivers.length/total*100),cp=100-dp;
- let d=new Date(m+"-01");$("dashSubtitle").textContent=d.toLocaleString("en-IN",{month:"long",year:"numeric"})+" performance overview";
+ let d=new Date(m+"-01");$("dashSubtitle").textContent=specificDate?new Date(specificDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"long",year:"numeric"})+" performance overview":(m==="ALL"?"All-time performance overview":d.toLocaleString("en-IN",{month:"long",year:"numeric"})+" performance overview");
  $("monthRevenue").textContent=money(revenue);$("monthBills").textContent=bills.length;$("monthCustomers").textContent=unique;$("monthKm").textContent=km.toFixed(1);
  $("driverCount").textContent=drivers.length;$("carCount").textContent=cars.length;$("avgBill").textContent=money(avg);
  $("driverPct").textContent=dp+"%";$("carPct").textContent=cp+"%";$("driverBar").style.width=dp+"%";$("carBar").style.width=cp+"%";
@@ -1469,6 +1478,7 @@ function renderHistory(){
  $("bookingHistoryList").innerHTML=bs.length?bs.map(b=>{let done=b.completedAt;let billsForBooking=all.filter(x=>x.bookingId===b.id||x.id===b.billId);let bill=billsForBooking[0];return `<div class="customer"><div class="avatar">📅</div><div class="grow"><b>${escapeHtml(b.name)}</b><small>${escapeHtml(b.id)} • ${bookingWhen(b)} • ${escapeHtml(b.status||"confirmed")} ${done?"• Bill "+escapeHtml(b.billNo||bill?.billNo||"generated"):"• Bill pending"}</small></div>${bill?`<button class="btn outline mini" onclick="openBill(${all.indexOf(bill)})">BILL</button>`:`<button class="btn gold mini" onclick='openBookingById(${JSON.stringify(b.id)})'>GENERATE BILL</button>`}</div>`}).join(""):`<div class="empty"><b>No bookings found</b>Is filter/date mein booking nahi mili.</div>`;
 } 
 function openBookingById(id){let b=load("shubhBookings","[]").find(x=>x.id===id);if(!b){toast("Booking nahi mili.");return}lastBooking=b;go("bookingReceipt");renderBookingReceipt();}
+function openBillingFromBookingManager(id){let b=load("shubhBookings","[]").find(x=>x.id===id);if(!b){toast("Booking nahi mili.");return}lastBooking=b;go("bookingReceipt");renderBookingReceipt();setTimeout(()=>openBillFromBooking(),80);}
 
 function clearBillHistory(){
  if(!confirm("WARNING: Saare completed bills/history permanently delete ho jayenge. Continue?")) return;
