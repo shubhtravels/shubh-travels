@@ -826,21 +826,26 @@ async function shareLoyaltyCard(phone,source){
    let blob=await loyaltyCardBlob(account,source||{});
    if(!blob)throw new Error("Card image create nahi hui");
    let file=new File([blob],`Shubh-Loyalty-${account.phone}.png`,{type:"image/png"});
-   if(navigator.share){
+
+   // Android Chrome/PWA: directly open the native Share Sheet with the image.
+   if(typeof navigator.share==="function"){
      try{
-       if(!navigator.canShare || navigator.canShare({files:[file]})){
-         await navigator.share({title:"Shubh Tour & Travels Loyalty Card",text:msg,files:[file]});
-         toast("✅ Loyalty Card shared.");
-         return;
-       }
-     }catch(e){if(e&&e.name==="AbortError")return;console.log("Share failed",e)}
+       await navigator.share({title:"Shubh Tour & Travels Loyalty Card",text:msg,files:[file]});
+       toast("✅ Loyalty Card shared.");
+       return;
+     }catch(e){
+       if(e && e.name==="AbortError") return;
+       console.log("Native image share unavailable",e);
+     }
    }
+
+   // Reliable fallback: save the actual PNG first, then open WhatsApp text.
    let u=URL.createObjectURL(blob),aTag=document.createElement("a");
-   aTag.href=u;aTag.download=`Shubh-Loyalty-${account.phone}.png`;aTag.style.display="none";
+   aTag.href=u;aTag.download=`Shubh-Loyalty-${account.phone}.png`;aTag.rel="noopener";
    document.body.appendChild(aTag);aTag.click();aTag.remove();
-   setTimeout(()=>URL.revokeObjectURL(u),5000);
-   toast("✅ Loyalty Card image save ho gayi.");
-   setTimeout(()=>shareWhatsAppText(phone,msg),1200);
+   setTimeout(()=>URL.revokeObjectURL(u),10000);
+   toast("✅ Loyalty Card image save ho gayi. WhatsApp khul raha hai...");
+   setTimeout(()=>shareWhatsAppText(phone,msg+"\n\n⭐ Loyalty Card image phone me save ho gayi hai. WhatsApp me attach karke bhej dein."),700);
  }catch(e){
    console.error("Loyalty share failed:",e);
    shareWhatsAppText(phone,msg);
@@ -1487,8 +1492,24 @@ function renderHistory(){
  let bills=all.filter(b=>match(b,false)),bs=bookings.filter(b=>match(b,true));
  $("historySummary").textContent=`${bills.length} completed bill(s) • ${bs.length} booking(s) found${date?" for "+new Date(date+"T00:00:00").toLocaleDateString("en-IN"):""}`;
  $("historyList").innerHTML=bills.length?bills.map(b=>{let i=all.indexOf(b);return `<div class="customer"><div class="avatar">₹</div><div class="grow"><b>${escapeHtml(b.name)}</b><small>${escapeHtml(b.billNo||"No Bill No.")} • ${escapeHtml(b.id)} • ${formatDateOnly(b.end||b.createdAt)} • ${money(b.total)}</small></div><button class="btn outline mini" onclick="openBill(${i})">View</button><button class="btn danger mini" onclick="deleteSingleBill(${i})">Delete</button></div>`}).join(""):`<div class="empty"><b>No bills found</b>Is filter/date mein completed bill nahi mila.</div>`;
- $("bookingHistoryList").innerHTML=bs.length?bs.map(b=>{let done=b.completedAt;let billsForBooking=all.filter(x=>x.bookingId===b.id||x.id===b.billId);let bill=billsForBooking[0];return `<div class="customer"><div class="avatar">📅</div><div class="grow"><b>${escapeHtml(b.name)}</b><small>${escapeHtml(b.id)} • ${bookingWhen(b)} • ${escapeHtml(b.status||"confirmed")} ${done?"• Bill "+escapeHtml(b.billNo||bill?.billNo||"generated"):"• Bill pending"}</small></div>${bill?`<button class="btn outline mini" onclick="openBill(${all.indexOf(bill)})">BILL</button>`:`<button class="btn gold mini" onclick='openBookingById(${JSON.stringify(b.id)})'>GENERATE BILL</button>`}</div>`}).join(""):`<div class="empty"><b>No bookings found</b>Is filter/date mein booking nahi mili.</div>`;
+ $("bookingHistoryList").innerHTML=bs.length?bs.map(b=>{
+   let done=b.completedAt;
+   let billsForBooking=all.filter(x=>x.bookingId===b.id||x.id===b.billId);
+   let bill=billsForBooking[0];
+   let bi=bill?all.indexOf(bill):-1;
+   return `<div class="customer"><div class="avatar">📅</div><div class="grow"><b>${escapeHtml(b.name)}</b><small>${escapeHtml(b.id)} • ${bookingWhen(b)} • ${escapeHtml(b.status||"confirmed")} ${done?"• Bill "+escapeHtml(b.billNo||bill?.billNo||"generated"):"• Bill pending"}</small></div><div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end"><button class="btn outline mini" onclick='openBookingById(${JSON.stringify(b.id)})'>VIEW</button>${bill?`<button class="btn outline mini" onclick="openBill(${bi})">BILL</button>`:`<button class="btn gold mini" onclick='openBookingById(${JSON.stringify(b.id)})'>GENERATE BILL</button>`}<button class="btn danger mini" onclick='deleteBookingById(${JSON.stringify(b.id)})'>DELETE</button></div></div>`
+ }).join(""):`<div class="empty"><b>No bookings found</b>Is filter/date mein booking nahi mili.</div>`;
 } 
+function deleteBookingById(id){
+ let list=load("shubhBookings","[]"),b=list.find(x=>x.id===id);
+ if(!b){toast("Booking nahi mili.");return}
+ let linked=load("shubhBills","[]").some(x=>x.bookingId===id||x.id===b.billId);
+ let warning=linked?"Is booking ka bill bhi linked hai. Booking delete karne se bill/history safe rahegi. Continue?":"Is booking ko permanently delete karna hai?";
+ if(!confirm(warning))return;
+ save("shubhBookings",list.filter(x=>x.id!==id));
+ if(lastBooking&&lastBooking.id===id)lastBooking=null;
+ renderHistory();renderHome();toast("🗑️ Booking deleted.");
+}
 function openBookingById(id){let b=load("shubhBookings","[]").find(x=>x.id===id);if(!b){toast("Booking nahi mili.");return}lastBooking=b;go("bookingReceipt");renderBookingReceipt();}
 function openBillingFromBookingManager(id){let b=load("shubhBookings","[]").find(x=>x.id===id);if(!b){toast("Booking nahi mili.");return}lastBooking=b;go("bookingReceipt");renderBookingReceipt();setTimeout(()=>openBillFromBooking(),80);}
 
