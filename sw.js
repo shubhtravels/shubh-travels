@@ -11,11 +11,13 @@ self.addEventListener('activate', function (event) {
       self.clients.claim(),
       caches.keys().then(function (keys) {
         return Promise.all(
-          keys.filter(function (key) {
-            return key !== VERSION;
-          }).map(function (key) {
-            return caches.delete(key);
-          })
+          keys
+            .filter(function (key) {
+              return key !== VERSION;
+            })
+            .map(function (key) {
+              return caches.delete(key);
+            })
         );
       })
     ])
