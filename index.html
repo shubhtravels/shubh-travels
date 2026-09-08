@@ -760,6 +760,30 @@ function loyaltyAccount(phone,name){
  save("shubhLoyaltyAccounts",list.slice(0,1000));
  return a;
 }
+function rebuildLoyaltyForCustomer(phone,name){
+ let p=String(phone||"").replace(/\D/g,""); if(!p)return null;
+ let bills=load("shubhBills","[]").filter(b=>String(b.phone||"").replace(/\D/g,"")===p);
+ let seen=new Set(),completed=[];
+ bills.forEach(b=>{
+   let key=String(b.bookingId||b.id||b.billNo||"");
+   if(!key||seen.has(key))return;
+   seen.add(key);
+   completed.push(b);
+ });
+ completed.sort((a,b)=>new Date(a.end||a.createdAt||0)-new Date(b.end||b.createdAt||0));
+ let a=loyaltyAccount(p,name||completed.at(-1)?.name||"Customer");
+ if(!a)return null;
+ a.totalCompleted=completed.length;
+ a.stamps=Math.min(5,completed.length);
+ a.rewardUnlocked=completed.length>=5;
+ let last=completed.at(-1);
+ if(last){a.lastCompletedAt=new Date(last.end||last.createdAt||Date.now()).getTime();a.lastBookingId=last.bookingId||last.id;}
+ a.updatedAt=Date.now();
+ let accounts=load("shubhLoyaltyAccounts","[]"),i=accounts.findIndex(x=>String(x.phone||"").replace(/\D/g,"")===p);
+ if(i>=0)accounts[i]=a;else accounts.unshift(a);
+ save("shubhLoyaltyAccounts",accounts.slice(0,1000));
+ return a;
+}
 function awardLoyaltyForCompletedRide(source){
  if(!source||!source.phone)return null;
  let key=source.bookingId||source.id||source.billNo; if(!key)return null;
@@ -795,52 +819,40 @@ async function loyaltyCardBlob(a,source){
  return await new Promise(r=>c.toBlob(r,"image/png",1));
 }
 async function shareLoyaltyCard(phone,source){
- let account=loyaltyAccount(phone,source?.name),msg=loyaltyMessage(account,source);
- if(!account)return;
+ let account=rebuildLoyaltyForCustomer(phone,source?.name)||loyaltyAccount(phone,source?.name);
+ if(!account){toast("Customer loyalty record nahi mila.");return}
+ let msg=loyaltyMessage(account,source||{});
  try{
-   const blob=await loyaltyCardBlob(account,source);
-   const file=new File([blob],`Shubh-Loyalty-${account.phone}.png`,{type:"image/png"});
-   // Prefer Android/Web Share with the actual card image.
+   let blob=await loyaltyCardBlob(account,source||{});
+   if(!blob)throw new Error("Card image create nahi hui");
+   let file=new File([blob],`Shubh-Loyalty-${account.phone}.png`,{type:"image/png"});
    if(navigator.share){
-     let fileShared=false;
      try{
        if(!navigator.canShare || navigator.canShare({files:[file]})){
-         await navigator.share({title:"Shubh Loyalty Card",text:msg,files:[file]});
-         fileShared=true;
+         await navigator.share({title:"Shubh Tour & Travels Loyalty Card",text:msg,files:[file]});
+         toast("✅ Loyalty Card shared.");
+         return;
        }
-     }catch(e){
-       // User cancellation is not an app error; continue to a reliable fallback.
-       if(e && e.name==="AbortError") return;
-     }
-     if(fileShared)return;
-     // Some browsers expose navigator.share but reject file sharing. Share the text
-     // instead of silently failing, while also saving the image for attachment.
-     const u=URL.createObjectURL(blob),aTag=document.createElement("a");
-     aTag.href=u;aTag.download=`Shubh-Loyalty-${account.phone}.png`;
-     document.body.appendChild(aTag);aTag.click();aTag.remove();
-     setTimeout(()=>URL.revokeObjectURL(u),2000);
-     toast("Loyalty card image save ho gayi. WhatsApp/share se message bhej sakte ho.");
-     setTimeout(()=>shareWhatsAppText(phone,msg+"\n\nLoyalty card image bhi save ho gayi hai."),900);
-     return;
+     }catch(e){if(e&&e.name==="AbortError")return;console.log("Share failed",e)}
    }
-   // Browser without Web Share: download first, then open WhatsApp with the card text.
-   const u=URL.createObjectURL(blob),aTag=document.createElement("a");
-   aTag.href=u;aTag.download=`Shubh-Loyalty-${account.phone}.png`;
+   let u=URL.createObjectURL(blob),aTag=document.createElement("a");
+   aTag.href=u;aTag.download=`Shubh-Loyalty-${account.phone}.png`;aTag.style.display="none";
    document.body.appendChild(aTag);aTag.click();aTag.remove();
-   setTimeout(()=>URL.revokeObjectURL(u),2000);
-   toast("Loyalty card image download ho gayi.");
-   setTimeout(()=>shareWhatsAppText(phone,msg+"\n\nLoyalty card image download ho gayi hai; WhatsApp me attach karke send kar dein."),1200);
+   setTimeout(()=>URL.revokeObjectURL(u),5000);
+   toast("✅ Loyalty Card image save ho gayi.");
+   setTimeout(()=>shareWhatsAppText(phone,msg),1200);
  }catch(e){
    console.error("Loyalty share failed:",e);
    shareWhatsAppText(phone,msg);
  }
 }
+
 function shareDriverPackage(phone){let rec=findLatestDriverPackage(phone);if(!rec){toast("Is customer ka permanent driver package record nahi mila.");return}shareWhatsAppText(rec.customerPhone,driverPackageMessage(rec));}
-function shareLatestLoyaltyCard(){if(!lastBill){toast("Completed bill nahi mila.");return}let a=loyaltyAccount(lastBill.phone,lastBill.name);if(!a){toast("Customer record nahi mila.");return}shareLoyaltyCard(lastBill.phone,{...lastBill,bookingId:lastBill.bookingId||lastBill.id,completedAt:lastBill.end||Date.now()});}
+function shareLatestLoyaltyCard(){if(!lastBill){toast("Completed bill nahi mila.");return}let a=rebuildLoyaltyForCustomer(lastBill.phone,lastBill.name)||loyaltyAccount(lastBill.phone,lastBill.name);if(!a){toast("Customer record nahi mila.");return}shareLoyaltyCard(lastBill.phone,{...lastBill,bookingId:lastBill.bookingId||lastBill.id,completedAt:lastBill.end||Date.now()});}
 function shareLatestDriverPackage(){if(!lastBill){toast("Completed bill nahi mila.");return}shareDriverPackage(lastBill.phone);}
 function lookupCustomerLoyalty(){
  let p=$("loyaltyLookup").value.replace(/\D/g,"");if(!p){toast("Customer WhatsApp number dalo.");return}
- let a=loyaltyAccount(p),rec=findLatestDriverPackage(p);
+ let a=rebuildLoyaltyForCustomer(p)||loyaltyAccount(p),rec=findLatestDriverPackage(p);
  $("loyaltyLookupResult").innerHTML=a
  ?`<b>${escapeHtml(a.name||"Customer")}</b><br>⭐ ${Number(a.stamps||0)}/5 stamps • ${Number(a.totalCompleted||0)} completed bookings<br>${a.rewardUnlocked?"🎁 ₹100 reward unlocked":"No reward unlocked yet"}${rec?`<br>👨‍✈️ ${escapeHtml(rec.driverName)} • ${escapeHtml(rec.packageName)} • ${money(rec.packageCharge)}<br>📅 ${formatDateOnly(rec.joiningDate)} → ${formatDateOnly(rec.serviceEndDate)}<br><button class="btn outline mini" onclick="shareDriverPackage('${String(rec.customerPhone).replace(/[^0-9]/g,"")}')">📤 SHARE DRIVER DETAILS</button>`:"<br>No permanent driver package."}<br><button class="btn gold mini" id="lookupLoyaltyShareBtn">⭐ SHARE LOYALTY CARD</button>`
  :"Customer not found.";
